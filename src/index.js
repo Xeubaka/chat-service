@@ -2,10 +2,10 @@ import http from "http";
 import express from "express";
 import { Server } from "socket.io";
 import { createClient } from "redis";
+import { createMessage, getHistory, pushMessage } from "./chatLogic.js";
 
 const REDIS_URL = process.env.REDIS_URL || "redis://redis:6379";
 const PORT = process.env.PORT || 3003;
-const HISTORY_LIMIT = 50;
 
 const app = express();
 const server = http.createServer(app);
@@ -22,14 +22,13 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     socket.data.name = name || "Anonymous";
 
-    const history = await redis.lRange(`chat:${roomId}`, -HISTORY_LIMIT, -1);
-    socket.emit("chat-history", history.map((m) => JSON.parse(m)));
+    const history = await getHistory(redis, roomId);
+    socket.emit("chat-history", history);
   });
 
   socket.on("chat-message", async ({ roomId, text }) => {
-    const message = { name: socket.data.name || "Anonymous", text, ts: Date.now() };
-    await redis.rPush(`chat:${roomId}`, JSON.stringify(message));
-    await redis.lTrim(`chat:${roomId}`, -HISTORY_LIMIT, -1);
+    const message = createMessage(socket.data.name, text);
+    await pushMessage(redis, roomId, message);
     io.to(roomId).emit("chat-message", message);
   });
 });
